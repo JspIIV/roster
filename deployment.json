@@ -1,0 +1,28 @@
+{
+  "name": "Roster",
+  "contract": "roster.py",
+  "class": "Roster",
+  "address": "0x838E784536B436646e8ed47861FCE4E01dE87543",
+  "superseded_deployment": "0xdF62489d69231e0760f148EB2E4aAcA8aaE631C4",
+  "network": "studionet",
+  "chain_id": 61999,
+  "rpc": "https://studio.genlayer.com/api",
+  "explorer": "https://explorer-studio.genlayer.com/address/0x838E784536B436646e8ed47861FCE4E01dE87543",
+  "consensus_round": "resolve_challenge: binds verdict and meets_criteria",
+  "integration_points": ["get_membership(list_id, subject_url)", "get_listed(list_id)"],
+  "verified_on_chain": {
+    "list_owner": "0x80519c53f10d731e4ff83a7d9acd69cf98da6258",
+    "applicant": "0x0b57877ec84d96b672cd47d8ea4424283fdb9f6c",
+    "challenger": "0xbdb591cddd787956a4fb17a8f4c325366525efd2",
+    "deposit_wei": "1000000000000000000",
+    "challenge_window_seconds": 180,
+    "curation_fee_bps": 500,
+    "challenge_0": {"kind": "ADMISSION", "verdict": "KEEP", "meets_criteria": true, "payout_wei": "950000000000000000", "fee_wei": "50000000000000000"},
+    "challenge_1": {"kind": "REMOVAL", "verdict": "KEEP", "meets_criteria": true, "payout_wei": "950000000000000000", "fee_wei": "50000000000000000"},
+    "entry_1_path": "unchallenged, listed by finalise_entry after the window closed",
+    "exit_path": "both entries delisted by the applicant, stakes returned",
+    "fees_earned_wei": "100000000000000000",
+    "contract_balance_wei": "0",
+    "audit_entries": 10
+  }
+}
