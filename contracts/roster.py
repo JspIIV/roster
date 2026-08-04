@@ -28,6 +28,12 @@ KIND_REMOVAL = "REMOVAL"
 
 VERDICT_KEEP = "KEEP"
 VERDICT_STRIKE = "STRIKE"
+# A round that could not be judged. It is not a finding against either party,
+# so it moves no stake and changes no membership: the challenger's bond goes
+# back, the entry returns to the status it held, and the challenge can be
+# raised again. Inventing KEEP or STRIKE here would settle real value on an
+# answer the validators never actually gave.
+VERDICT_UNRESOLVED = "UNRESOLVED"
 
 EVIDENCE_CHARS = 20000
 
@@ -553,7 +559,10 @@ class Roster(gl.Contract):
             "{\"meets_criteria\": true, \"verdict\": \"KEEP\", "
             "\"reasoning\": \"at most two sentences\"}\n\n"
             "Rules:\n"
-            "- meets_criteria must be a boolean\n"
+            "- meets_criteria must be a JSON boolean literal, written as true "
+            "or false with no quotation marks. The strings \"true\" and "
+            "\"false\", and the numbers 1 and 0, are rejected and the round "
+            "decides nothing.\n"
             "- verdict must be exactly one of: KEEP, STRIKE, and must match "
             "meets_criteria exactly as described above\n"
             "- reasoning: at most two sentences citing what the page did or did "
@@ -562,6 +571,29 @@ class Roster(gl.Contract):
         )
 
     def _parse_challenge_result(self, raw: str) -> dict:
+        """Read the model's answer, or refuse it. This never raises.
+
+        Two rules, and both were learned the hard way.
+
+        The finding must be an actual JSON boolean. `bool("false")` is `True`
+        in Python, so coercing whatever arrived would turn the string "false"
+        into KEEP, moving a deposit and changing a membership set other
+        contracts read for settlement, on a value that said the opposite. A
+        type other than a boolean is a refusal, not something to interpret.
+
+        And a refusal comes back as data rather than as an exception. This runs
+        inside the nondeterministic block, where a raise cannot be caught by the
+        deterministic frame around it, so the fallback meant to handle it would
+        never run.
+        """
+        def refuse(reason: str) -> dict:
+            return json.dumps({
+                "ok": False,
+                "meets_criteria": None,
+                "verdict": VERDICT_UNRESOLVED,
+                "reasoning": ERROR_LLM + " " + str(reason)[:200],
+            })
+
         raw = raw.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
@@ -575,12 +607,23 @@ class Roster(gl.Contract):
         try:
             parsed = json.loads(raw)
         except (ValueError, TypeError):
-            raise gl.vm.UserError(ERROR_LLM + " Non-JSON response from model")
+            return refuse("Non-JSON response from model")
+        if not isinstance(parsed, dict):
+            return refuse("Model returned " + type(parsed).__name__ + ", not an object")
 
-        meets_criteria = bool(parsed.get("meets_criteria", False))
+        meets_criteria = parsed.get("meets_criteria", None)
+        # isinstance(True, int) is also True in Python, so booleans have to be
+        # checked before anything numeric would be accepted. Only a real JSON
+        # true or false gets through: not 1, not 0, not "true", not "false".
+        if not isinstance(meets_criteria, bool):
+            return refuse(
+                "meets_criteria must be a JSON boolean, got "
+                + type(meets_criteria).__name__ + " " + json.dumps(meets_criteria)[:60]
+            )
         verdict = VERDICT_KEEP if meets_criteria else VERDICT_STRIKE
 
         return json.dumps({
+            "ok": True,
             "meets_criteria": meets_criteria,
             "verdict": verdict,
             "reasoning": str(parsed.get("reasoning", "")),
@@ -605,8 +648,11 @@ class Roster(gl.Contract):
             result_str = gl.eq_principle.prompt_comparative(
                 run,
                 principle=(
-                    "verdict and meets_criteria must match exactly between "
-                    "validators. verdict decides which party receives the "
+                    "ok, verdict and meets_criteria must match exactly between "
+                    "validators. ok is whether the round produced a usable "
+                    "finding at all, and it decides whether any stake moves, so "
+                    "a validator differing on it is settling a different case. "
+                    "verdict decides which party receives the "
                     "loser's staked deposit and whether the entry stands in a "
                     "list other contracts read for settlement, so two "
                     "validators differing on verdict would be paying out on a "
@@ -622,10 +668,16 @@ class Roster(gl.Contract):
         except gl.vm.UserError:
             raise
         except Exception as exc:
+            # Machinery, not judgement. This used to fall back to STRIKE, which
+            # decided the case against the applicant because the protocol had a
+            # bad day. An unfetchable page is already handled inside the prompt
+            # through the fetch marker; anything reaching here means no finding
+            # was produced, so nothing is settled on it.
             result = {
-                "verdict": VERDICT_STRIKE,
-                "meets_criteria": False,
-                "reasoning": ERROR_EXTERNAL + " The subject page could not be fetched or judged: " + str(exc),
+                "ok": False,
+                "verdict": VERDICT_UNRESOLVED,
+                "meets_criteria": None,
+                "reasoning": ERROR_EXTERNAL + " The challenge could not be judged: " + str(exc),
             }
 
         challenge["verdict"] = result["verdict"]
@@ -650,6 +702,25 @@ class Roster(gl.Contract):
         verdict = challenge["verdict"]
         applicant = entry["applicant"]
         challenger = challenge["challenger"]
+
+        if verdict == VERDICT_UNRESOLVED:
+            # No finding, so no winner and no loser. The bond goes back whole,
+            # the applicant's deposit stays staked with the entry exactly as it
+            # was, the entry returns to the status it held before the challenge,
+            # and no standing moves. The list earns no fee for a round that
+            # decided nothing. Anyone may challenge again.
+            self._pay(challenger, int(challenge["bond_wei"]))
+            challenge["settled_to"] = ""
+            challenge["payout_wei"] = "0"
+            challenge["fee_wei"] = "0"
+            self._save_challenge(challenge)
+
+            restored = ENTRY_PENDING if kind == KIND_ADMISSION else ENTRY_LISTED
+            entry["status"] = restored
+            self._reindex_entry_status(challenge["entry_id"], ENTRY_UNDER_CHALLENGE, restored)
+            self._save_entry(entry)
+            return
+
         loser_deposit = int(entry["deposit_wei"])
         challenger_bond = int(challenge["bond_wei"])
         fee_bps = int(lst["curation_fee_bps"])

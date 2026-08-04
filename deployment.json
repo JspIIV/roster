@@ -2,14 +2,16 @@
   "name": "Roster",
   "contract": "roster.py",
   "class": "Roster",
-  "address": "0x838E784536B436646e8ed47861FCE4E01dE87543",
-  "superseded_deployment": "0xdF62489d69231e0760f148EB2E4aAcA8aaE631C4",
+  "address": "0xCf45496BD4679d77961E53393fAb13A1Fab40527",
   "network": "studionet",
   "chain_id": 61999,
   "rpc": "https://studio.genlayer.com/api",
-  "explorer": "https://explorer-studio.genlayer.com/address/0x838E784536B436646e8ed47861FCE4E01dE87543",
-  "consensus_round": "resolve_challenge: binds verdict and meets_criteria",
-  "integration_points": ["get_membership(list_id, subject_url)", "get_listed(list_id)"],
+  "explorer": "https://explorer-studio.genlayer.com/address/0xCf45496BD4679d77961E53393fAb13A1Fab40527",
+  "consensus_round": "resolve_challenge: binds ok, verdict and meets_criteria",
+  "integration_points": [
+    "get_membership(list_id, subject_url)",
+    "get_listed(list_id)"
+  ],
   "verified_on_chain": {
     "list_owner": "0x80519c53f10d731e4ff83a7d9acd69cf98da6258",
     "applicant": "0x0b57877ec84d96b672cd47d8ea4424283fdb9f6c",
@@ -17,12 +19,65 @@
     "deposit_wei": "1000000000000000000",
     "challenge_window_seconds": 180,
     "curation_fee_bps": 500,
-    "challenge_0": {"kind": "ADMISSION", "verdict": "KEEP", "meets_criteria": true, "payout_wei": "950000000000000000", "fee_wei": "50000000000000000"},
-    "challenge_1": {"kind": "REMOVAL", "verdict": "KEEP", "meets_criteria": true, "payout_wei": "950000000000000000", "fee_wei": "50000000000000000"},
+    "challenge_0": {
+      "kind": "ADMISSION",
+      "verdict": "KEEP",
+      "meets_criteria": true,
+      "payout_wei": "950000000000000000",
+      "fee_wei": "50000000000000000"
+    },
+    "challenge_1": {
+      "kind": "REMOVAL",
+      "verdict": "KEEP",
+      "meets_criteria": true,
+      "payout_wei": "950000000000000000",
+      "fee_wei": "50000000000000000"
+    },
     "entry_1_path": "unchallenged, listed by finalise_entry after the window closed",
     "exit_path": "both entries delisted by the applicant, stakes returned",
     "fees_earned_wei": "100000000000000000",
     "contract_balance_wei": "0",
     "audit_entries": 10
+  },
+  "superseded_deployments": [
+    {
+      "address": "0xdF62489d69231e0760f148EB2E4aAcA8aaE631C4",
+      "reason": "a listed entry returned its deposit while settlement still assumed it was held"
+    },
+    {
+      "address": "0x838E784536B436646e8ed47861FCE4E01dE87543",
+      "reason": "meets_criteria was coerced with bool(), so the string \"false\" would have become KEEP, and a failed round fell back to STRIKE"
+    }
+  ],
+  "verdicts": {
+    "KEEP": "the entry meets the criteria, the challenger's bond goes to the applicant less the curation fee",
+    "STRIKE": "it does not, the applicant's deposit goes to the challenger less the curation fee",
+    "UNRESOLVED": "the round produced no usable finding, the bond goes back whole, the deposit stays staked, the entry returns to its prior status, no fee and no standing change"
+  },
+  "result_parser_rules": [
+    "meets_criteria must be a JSON boolean literal, since bool(\"false\") is True in Python",
+    "the boolean check precedes any numeric reading, since isinstance(True, int) is also True",
+    "a refusal is returned as data, never raised, because a raise inside the nondeterministic block cannot be caught by the deterministic frame",
+    "a failure of the consensus machinery resolves to UNRESOLVED rather than deciding the case against the applicant"
+  ],
+  "parser_probe": {
+    "contract": "roster_parse_probe.py",
+    "address": "0xEF97e352EAc55D9E0AAa7Cb8aED52325D9671077",
+    "explorer": "https://explorer-studio.genlayer.com/address/0xEF97e352EAc55D9E0AAa7Cb8aED52325D9671077",
+    "test": "tests/roster_parse_check.mjs",
+    "result": "11 passed, 0 failed"
+  },
+  "reverified_on_chain": {
+    "list": "Maintained Open Source Libraries, 1 GEN deposit, 180 second window, 500 bps fee",
+    "challenge_0": {
+      "kind": "ADMISSION",
+      "verdict": "STRIKE",
+      "meets_criteria": false,
+      "payout_wei": "950000000000000000",
+      "fee_wei": "50000000000000000",
+      "note": "the validator held the fetched page itself to the criteria and would not infer maintenance it could not see"
+    },
+    "entry_1_path": "unchallenged, listed by finalise_entry after the window closed, then delisted by the applicant",
+    "contract_balance_wei": "0"
   }
 }

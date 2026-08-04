@@ -6,8 +6,9 @@ Anyone opens a list and publishes the criteria for getting on it. Applicants sta
 
 What comes out is a maintained set that other contracts can read. That is what this contract is for.
 
-* **Contract:** [`0x838E784536B436646e8ed47861FCE4E01dE87543`](https://explorer-studio.genlayer.com/address/0x838E784536B436646e8ed47861FCE4E01dE87543) on GenLayer Studionet
-* **Source:** [`contracts/roster.py`](contracts/roster.py), 962 lines, 27 public methods
+* **Contract:** [`0xCf45496BD4679d77961E53393fAb13A1Fab40527`](https://explorer-studio.genlayer.com/address/0xCf45496BD4679d77961E53393fAb13A1Fab40527) on GenLayer Studionet
+* **Source:** [`contracts/roster.py`](contracts/roster.py)
+* **Parser probe:** [`0xEF97e3...52325D9671077`](https://explorer-studio.genlayer.com/address/0xEF97e352EAc55D9E0AAa7Cb8aED52325D9671077), the result parser deployed on its own so its type rules can be exercised on chain
 
 ## The integration points
 
@@ -33,7 +34,7 @@ Making it bonded is what makes it usable. An unbonded registry is a list of clai
 | `open_list` | Publishes the criteria, the deposit size, the challenge window and the curation fee. The fee is capped in a contract constant at ten percent, so an owner cannot set a confiscatory rate after people have staked. |
 | `apply_to_list` | Stakes the deposit and cites a URL. The challenge window opens. |
 | `challenge_entry` | Matches the deposit. Against a `PENDING` entry this is an `ADMISSION` challenge and must arrive before the window closes. Against a `LISTED` entry it is a `REMOVAL` challenge and has no deadline. |
-| `resolve_challenge` | One consensus round over the fetched page. `KEEP` means the entry belongs, `STRIKE` means it does not. |
+| `resolve_challenge` | One consensus round over the fetched page. `KEEP` means the entry belongs, `STRIKE` means it does not, `UNRESOLVED` means the round produced no usable finding and nothing settles. |
 | `finalise_entry` | After the window closes with no challenge, the entry is listed. |
 | `delist_entry` | The applicant leaves the list and takes the stake back. Refused while a challenge is live. |
 
@@ -45,7 +46,7 @@ The deadline is computed once, when the application is made, and stored as an in
 
 ### How the decision is bound
 
-The equivalence rule requires validators to match exactly on `verdict` and on `meets_criteria`. The rule text says what each controls: `verdict` decides which party receives the loser's staked deposit and whether the entry stands in a list that other contracts read for settlement, and `meets_criteria` is the finding the verdict is derived from, so a validator differing on it has reached a different conclusion about the page rather than worded the same one differently. Only the wording of `reasoning` may differ.
+The equivalence rule requires validators to match exactly on `ok`, on `verdict` and on `meets_criteria`. `ok` is whether the round produced a usable finding at all, and it decides whether any stake moves, so a validator differing on it is settling a different case. The rule text says what each controls: `verdict` decides which party receives the loser's staked deposit and whether the entry stands in a list that other contracts read for settlement, and `meets_criteria` is the finding the verdict is derived from, so a validator differing on it has reached a different conclusion about the page rather than worded the same one differently. Only the wording of `reasoning` may differ.
 
 Actors bind to the transaction sender throughout. The owner of a list is whoever opened it, the applicant is whoever staked, the challenger is whoever bonded, and only the applicant may delist.
 
@@ -72,6 +73,45 @@ Run across three separate addresses: list owner `0x80519c...da6258`, applicant `
 **Everyone left and the contract emptied.** Both applicants called `delist_entry` and took their stakes back. `get_listed` returns `[]` and the contract's balance is `0`. Nothing is stranded, and the locked deposit model traps nobody.
 
 Ten audit entries carry every action with its actor and timestamp.
+
+That run was on an earlier deployment. The contract linked above is the one that came out of review, and the mechanism was re-established on it: a list opened, an admission challenge bonded and resolved, the loser's stake split `950000000000000000` to the winner and `50000000000000000` to the list owner, a second entry listed by `finalise_entry` after its window closed with nobody contesting it, then delisted by its applicant, and the contract's balance back to `0`.
+
+The verdict came out the other way this time, and the reasoning is the reason to keep it here: the validator would not certify maintenance the fetched page did not actually show, even for a repository it recognised as real and Apache licensed. The finding follows the page, not the reputation of the subject.
+
+## A round that decides nothing settles nothing
+
+There are three outcomes, not two. `KEEP` and `STRIKE` move a stake. `UNRESOLVED` is what happens when the round produced no usable finding at all, and it is not a finding against anybody: the challenger's bond goes back whole, the applicant's deposit stays staked exactly where it was, the entry returns to the status it held, the list earns no curation fee, no standing moves, and anyone may challenge again.
+
+Two things route into it, and both used to route somewhere worse.
+
+**A finding must be a real JSON boolean.** `bool("false")` is `True` in Python, so a model answering with the string `"false"` would have been read as `true` and become `KEEP`: a deposit paid to the wrong party and an entry admitted to a set other contracts read for settlement, on a value that said the opposite. `meets_criteria` is now required to be a JSON boolean literal. Not `"true"`, not `"false"`, not `1`, not `0`. Anything else is refused rather than interpreted, because a type the contract has to guess at is not a finding.
+
+`isinstance(True, int)` is also `True`, so the boolean check has to come before anything numeric would pass. The prompt states the rule as well, but a prompt is a request and a type check is a guarantee.
+
+**A failure of the machinery is not a verdict either.** The fallback used to write `STRIKE` when the consensus round threw, which decided the case against the applicant because the protocol had a bad day. Pages that cannot be fetched are already handled inside the prompt through the fetch marker, so anything reaching the fallback means no finding was made, and now nothing settles on it.
+
+The parser returns its refusal as data rather than raising. It runs inside the nondeterministic block, where the deterministic frame around it cannot catch an exception, so the fallback meant to handle a bad answer would never have run at all.
+
+### Proving it on chain
+
+The rule cannot be demonstrated through `resolve_challenge` without persuading live validators to answer with the wrong type on purpose. So the parser is lifted verbatim into [`contracts/roster_parse_probe.py`](contracts/roster_parse_probe.py), deployed as a deterministic view, and the malformed answers are fed to it directly on chain by [`tests/roster_parse_check.mjs`](tests/roster_parse_check.mjs).
+
+| Model answer | Verdict |
+|---|---|
+| `{"meets_criteria": true}` | `KEEP` |
+| `{"meets_criteria": false}` | `STRIKE` |
+| `{"meets_criteria": "false"}` | `UNRESOLVED` |
+| `{"meets_criteria": "true"}` | `UNRESOLVED` |
+| `{"meets_criteria": 1}` and `0` | `UNRESOLVED` |
+| `{"meets_criteria": null}`, or the key missing | `UNRESOLVED` |
+| Not JSON, or JSON that is not an object | `UNRESOLVED` |
+| A fenced code block around valid JSON | `KEEP` |
+
+```
+11 passed, 0 failed
+```
+
+The probe is deliberately a separate contract. A method on Roster itself that accepted a model answer from a caller would be a way to hand the contract a finding nobody's validators ever made.
 
 ## A bug that testing found
 
