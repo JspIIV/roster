@@ -767,8 +767,13 @@ class Roster(gl.Contract):
             if applicant_wins:
                 entry["status"] = ENTRY_LISTED
             else:
+                # A removal challenge takes an entry that was already counted as
+                # listed. Counting it as removed without uncounting it as listed
+                # leaves the list claiming a membership it no longer has, and
+                # get_listed and get_list would then disagree with each other.
                 entry["status"] = ENTRY_REMOVED
                 lst["entries_removed"] = int(lst["entries_removed"]) + 1
+                lst["entries_listed"] = max(0, int(lst["entries_listed"]) - 1)
 
         self._reindex_entry_status(challenge["entry_id"], ENTRY_UNDER_CHALLENGE, entry["status"])
         self._save_entry(entry)
@@ -790,7 +795,10 @@ class Roster(gl.Contract):
             if kind == KIND_ADMISSION:
                 loser_record["entries_rejected"] = int(loser_record["entries_rejected"]) + 1
             else:
+                # The same correction on the applicant's own record: an entry
+                # they held is gone, so their standing has to stop claiming it.
                 loser_record["entries_removed"] = int(loser_record["entries_removed"]) + 1
+                loser_record["entries_listed"] = max(0, int(loser_record["entries_listed"]) - 1)
         else:
             loser_record["challenges_lost"] = int(loser_record["challenges_lost"]) + 1
 
@@ -824,6 +832,41 @@ class Roster(gl.Contract):
                     "listed_at": e["listed_at"],
                 })
         return json.dumps({"listed": False, "list_id": list_id, "subject_url": target})
+
+    @gl.public.view
+    def get_list_integrity(self, list_id: str) -> str:
+        """Counts the entries and compares them with the list's own counters.
+
+        The counters exist so a caller does not have to walk every entry, which
+        means they can drift from the truth, and a drifted counter is worse than
+        no counter: get_listed and get_list would answer differently about the
+        same list. A removal challenge used to do exactly that, counting an
+        entry as removed without uncounting it as listed. This makes the
+        invariant something anyone can check from outside rather than something
+        the contract asserts about itself.
+        """
+        list_id = _lid(list_id)
+        lst = self._load_list(list_id)
+        counted = {ENTRY_LISTED: 0, ENTRY_REJECTED: 0, ENTRY_REMOVED: 0}
+        for entry_id in _csv_list(self.idx_list_entries.get(list_id, "")):
+            raw = self.entries.get(entry_id, None)
+            if raw is None:
+                continue
+            status = json.loads(raw)["status"]
+            if status in counted:
+                counted[status] += 1
+
+        stored = {
+            ENTRY_LISTED: int(lst["entries_listed"]),
+            ENTRY_REJECTED: int(lst["entries_rejected"]),
+            ENTRY_REMOVED: int(lst["entries_removed"]),
+        }
+        return json.dumps({
+            "list_id": list_id,
+            "counted": counted,
+            "stored": stored,
+            "agrees": counted == stored,
+        })
 
     @gl.public.view
     def get_listed(self, list_id: str) -> str:

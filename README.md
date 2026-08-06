@@ -6,7 +6,7 @@ Anyone opens a list and publishes the criteria for getting on it. Applicants sta
 
 What comes out is a maintained set that other contracts can read. That is what this contract is for.
 
-* **Contract:** [`0xCf45496BD4679d77961E53393fAb13A1Fab40527`](https://explorer-studio.genlayer.com/address/0xCf45496BD4679d77961E53393fAb13A1Fab40527) on GenLayer Studionet
+* **Contract:** [`0x69e29cccF42b504b917481DCbc369A17E7a98E50`](https://explorer-studio.genlayer.com/address/0x69e29cccF42b504b917481DCbc369A17E7a98E50) on GenLayer Studionet
 * **Source:** [`contracts/roster.py`](contracts/roster.py)
 * **Parser probe:** [`0xEF97e3...52325D9671077`](https://explorer-studio.genlayer.com/address/0xEF97e352EAc55D9E0AAa7Cb8aED52325D9671077), the result parser deployed on its own so its type rules can be exercised on chain
 
@@ -112,6 +112,41 @@ The rule cannot be demonstrated through `resolve_challenge` without persuading l
 ```
 
 The probe is deliberately a separate contract. A method on Roster itself that accepted a model answer from a caller would be a way to hand the contract a finding nobody's validators ever made.
+
+## A second bug, and what it was really about
+
+A reviewer found that a successful removal challenge left the entry counted as
+listed. The entry itself was correct: its status was `REMOVED` and `get_listed`
+no longer returned it. What was wrong was the bookkeeping beside it. The list's
+own `entries_listed` counter, and the applicant's standing, both went on
+claiming a membership that no longer existed.
+
+That matters more than a wrong number. The counters exist so a caller does not
+have to walk every entry, which means a caller reading `get_list` and a caller
+reading `get_listed` would have been told different things about the same list,
+and only one of them would have been right. A registry whose views disagree is
+not a registry.
+
+Both are now uncounted when a removal succeeds, on the list and on the record.
+And because a counter that can drift once can drift again, the invariant is now
+something anyone can check rather than something this contract asserts about
+itself:
+
+```python
+get_list_integrity(list_id)   # walks the entries, compares them with the counters
+```
+
+It returns the counted totals, the stored totals, and whether they agree.
+Proved on chain in [`tests/roster_removal.mjs`](tests/roster_removal.mjs): an
+entry the criteria excluded was listed unchallenged, then removed by a bonded
+challenge, and every view was read before and after.
+
+```
+before  counted {LISTED: 1}              stored {LISTED: 1}              agrees
+after   counted {LISTED: 0, REMOVED: 1}  stored {LISTED: 0, REMOVED: 1}  agrees
+
+11 passed, 0 failed
+```
 
 ## A bug that testing found
 

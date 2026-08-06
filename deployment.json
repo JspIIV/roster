@@ -2,11 +2,11 @@
   "name": "Roster",
   "contract": "roster.py",
   "class": "Roster",
-  "address": "0xCf45496BD4679d77961E53393fAb13A1Fab40527",
+  "address": "0x69e29cccF42b504b917481DCbc369A17E7a98E50",
   "network": "studionet",
   "chain_id": 61999,
   "rpc": "https://studio.genlayer.com/api",
-  "explorer": "https://explorer-studio.genlayer.com/address/0xCf45496BD4679d77961E53393fAb13A1Fab40527",
+  "explorer": "https://explorer-studio.genlayer.com/address/0x69e29cccF42b504b917481DCbc369A17E7a98E50",
   "consensus_round": "resolve_challenge: binds ok, verdict and meets_criteria",
   "integration_points": [
     "get_membership(list_id, subject_url)",
@@ -47,6 +47,10 @@
     {
       "address": "0x838E784536B436646e8ed47861FCE4E01dE87543",
       "reason": "meets_criteria was coerced with bool(), so the string \"false\" would have become KEEP, and a failed round fell back to STRIKE"
+    },
+    {
+      "address": "0xCf45496BD4679d77961E53393fAb13A1Fab40527",
+      "reason": "a successful removal challenge left the entry counted as listed, so get_listed and get_list disagreed about the same list"
     }
   ],
   "verdicts": {
@@ -79,5 +83,36 @@
     },
     "entry_1_path": "unchallenged, listed by finalise_entry after the window closed, then delisted by the applicant",
     "contract_balance_wei": "0"
+  },
+  "counter_rules": [
+    "finalise_entry and a won admission challenge count an entry as listed, on the list and on the applicant record",
+    "delist_entry uncounts it on both",
+    "a lost removal challenge uncounts it on both and counts it as removed",
+    "get_list_integrity walks the entries and reports whether the stored counters agree, so the invariant is checkable from outside"
+  ],
+  "removal_counters_proof": {
+    "test": "tests/roster_removal.mjs",
+    "result": "11 passed, 0 failed",
+    "before": {
+      "counted": {
+        "LISTED": 1
+      },
+      "stored": {
+        "LISTED": 1
+      },
+      "agrees": true
+    },
+    "after": {
+      "counted": {
+        "LISTED": 0,
+        "REMOVED": 1
+      },
+      "stored": {
+        "LISTED": 0,
+        "REMOVED": 1
+      },
+      "agrees": true
+    },
+    "verdict": "STRIKE, the validator citing that the page was an encyclopedia article about the category rather than a project page"
   }
 }
