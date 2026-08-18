@@ -377,8 +377,19 @@ class Roster(gl.Contract):
         deposit = int(entry["deposit_wei"])
         self._pay(actor, deposit)
 
-        entry["status"] = ENTRY_REMOVED
-        self._reindex_entry_status(entry_id, ENTRY_PENDING, ENTRY_REMOVED)
+        # WITHDRAWN, not REMOVED. Two different things happened and the record
+        # has to say which: REMOVED is a listing struck down by a challenger who
+        # bonded against it and won, and reading that off an application its own
+        # applicant simply took back is a false account of the entry.
+        #
+        # It also broke the counters. REMOVED is a population the list keeps a
+        # figure for, and nothing here increments it, so one voluntary
+        # withdrawal was enough to make get_list_integrity report that the
+        # stored counters disagree with the entries. A pending application was
+        # never counted as listed either, so there is nothing to decrement: the
+        # correct fix is the status, not another counter.
+        entry["status"] = ENTRY_WITHDRAWN
+        self._reindex_entry_status(entry_id, ENTRY_PENDING, ENTRY_WITHDRAWN)
         self._save_entry(entry)
 
         self._audit("ENTRY", entry_id, "APPLICATION_WITHDRAWN", actor, "deposit_returned=" + str(deposit))

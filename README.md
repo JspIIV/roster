@@ -6,8 +6,14 @@ Anyone opens a list and publishes the criteria for getting on it. Applicants sta
 
 What comes out is a maintained set that other contracts can read. That is what this contract is for.
 
-* **Contract:** [`0x69e29cccF42b504b917481DCbc369A17E7a98E50`](https://explorer-studio.genlayer.com/address/0x69e29cccF42b504b917481DCbc369A17E7a98E50) on GenLayer Studionet
+* **Contract:** [`0x587aA47B87B66bBf187e35FC61A48Edd77f15644`](https://explorer-asimov.genlayer.com/address/0x587aA47B87B66bBf187e35FC61A48Edd77f15644) on GenLayer Asimov testnet, chain id 4221
 * **Source:** [`contracts/roster.py`](contracts/roster.py)
+* **Earlier deployments:** the challenge runs quoted further down, including the
+  11 check removal run, were made on the previous studionet deployment
+  [`0x69e29c...369A17E7a98E50`](https://explorer-studio.genlayer.com/address/0x69e29cccF42b504b917481DCbc369A17E7a98E50).
+  The contract above is the corrected source on testnet, and the withdrawal run
+  below was made against it. Said plainly rather than left to be assumed: those
+  older results belong to the older address.
 * **Parser probe:** [`0xEF97e3...52325D9671077`](https://explorer-studio.genlayer.com/address/0xEF97e352EAc55D9E0AAa7Cb8aED52325D9671077), the result parser deployed on its own so its type rules can be exercised on chain
 
 ## The integration points
@@ -146,6 +152,48 @@ before  counted {LISTED: 1}              stored {LISTED: 1}              agrees
 after   counted {LISTED: 0, REMOVED: 1}  stored {LISTED: 0, REMOVED: 1}  agrees
 
 11 passed, 0 failed
+```
+
+## A third bug: two different endings written down as the same one
+
+An entry can leave a list in two ways, and they mean opposite things. A
+challenger can bond against it and win, which is a judgement about the entry.
+Or the applicant can simply take it back, which is a judgement about nothing at
+all. `withdraw_application` was recording the second as `REMOVED`, the status
+that belongs to the first.
+
+That is a false account of the entry on its face, and it broke the counters
+underneath. `REMOVED` is a population the list keeps a figure for, and nothing
+in the withdrawal path incremented it, so a single applicant changing their
+mind was enough to make `get_list_integrity` report that the stored counters no
+longer matched the entries. The invariant added after the previous fix was
+doing its job: it caught this.
+
+Withdrawal now transitions to `WITHDRAWN`, which is what `delist_entry` already
+used for a listed entry leaving voluntarily. A pending application was never
+counted as listed, so there is no counter to move: the status was the whole
+bug, and adding a counter would have been fixing the symptom.
+
+The six statuses now say six different things:
+
+| Status | What happened |
+|---|---|
+| `PENDING` | applied, inside the challenge window |
+| `LISTED` | on the list, deposit staked while it sits there |
+| `UNDER_CHALLENGE` | somebody has bonded against it |
+| `REJECTED` | an admission challenge was won against it |
+| `REMOVED` | a removal challenge was won against it |
+| `WITHDRAWN` | the applicant took it back, and the deposit was returned |
+
+Proved on chain in [`tests/roster_withdraw.mjs`](tests/roster_withdraw.mjs).
+No consensus round is involved in any of it, which is precisely why it was
+worth fixing rather than explaining away: this is ordinary contract state.
+
+```
+status is now WITHDRAWN
+  PASS  a voluntary withdrawal is WITHDRAWN, not REMOVED
+  PASS  the stored counters still agree with the entries
+  PASS  and nothing was counted as removed
 ```
 
 ## A bug that testing found

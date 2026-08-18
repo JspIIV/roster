@@ -2,11 +2,11 @@
   "name": "Roster",
   "contract": "roster.py",
   "class": "Roster",
-  "address": "0x69e29cccF42b504b917481DCbc369A17E7a98E50",
-  "network": "studionet",
-  "chain_id": 61999,
-  "rpc": "https://studio.genlayer.com/api",
-  "explorer": "https://explorer-studio.genlayer.com/address/0x69e29cccF42b504b917481DCbc369A17E7a98E50",
+  "address": "0x587aA47B87B66bBf187e35FC61A48Edd77f15644",
+  "network": "GenLayer Asimov testnet",
+  "chain_id": 4221,
+  "rpc": "https://rpc-asimov.genlayer.com",
+  "explorer": "https://explorer-asimov.genlayer.com/address/0x587aA47B87B66bBf187e35FC61A48Edd77f15644",
   "consensus_round": "resolve_challenge: binds ok, verdict and meets_criteria",
   "integration_points": [
     "get_membership(list_id, subject_url)",
@@ -37,7 +37,12 @@
     "exit_path": "both entries delisted by the applicant, stakes returned",
     "fees_earned_wei": "100000000000000000",
     "contract_balance_wei": "0",
-    "audit_entries": 10
+    "audit_entries": 10,
+    "withdrawal_path": {
+      "test": "tests/roster_withdraw.mjs",
+      "result": "a pending application taken back by its own applicant is WITHDRAWN, get_list_integrity still agrees, and nothing is counted as removed",
+      "checks": 3
+    }
   },
   "superseded_deployments": [
     {
@@ -51,6 +56,11 @@
     {
       "address": "0xCf45496BD4679d77961E53393fAb13A1Fab40527",
       "reason": "a successful removal challenge left the entry counted as listed, so get_listed and get_list disagreed about the same list"
+    },
+    {
+      "address": "0x69e29cccF42b504b917481DCbc369A17E7a98E50",
+      "network": "studionet",
+      "reason": "withdraw_application recorded a voluntary withdrawal as REMOVED, which is the status a listing gets when a challenger bonds against it and wins. REMOVED is also a population the list keeps a figure for and nothing incremented it, so one withdrawal made get_list_integrity report that the stored counters disagreed with the entries"
     }
   ],
   "verdicts": {
@@ -114,5 +124,13 @@
       "agrees": true
     },
     "verdict": "STRIKE, the validator citing that the page was an encyclopedia article about the category rather than a project page"
+  },
+  "entry_statuses": {
+    "PENDING": "applied, inside the challenge window",
+    "LISTED": "on the list, deposit staked for as long as it sits there",
+    "UNDER_CHALLENGE": "somebody has bonded against it",
+    "REJECTED": "an admission challenge was won against it",
+    "REMOVED": "a removal challenge was won against it, and it is uncounted as listed",
+    "WITHDRAWN": "the applicant took it back themselves, whether pending or listed, and the deposit was returned"
   }
 }
